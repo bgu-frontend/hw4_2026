@@ -5,6 +5,16 @@ if [ -z "$1" ] || [ -z "$2" ]; then
   exit 1
 fi
 
+# Precheck: attacker server must be running on port 4000 before the Playwright
+# XSS tests run, otherwise they fail with a confusing ECONNREFUSED instead of a
+# clear setup hint.
+if ! lsof -ti tcp:4000 >/dev/null 2>&1; then
+  echo "Attacker server not detected on port 4000."
+  echo "Start it from the repo root before re-running this script:"
+  echo "    node attacker_server.js"
+  exit 1
+fi
+
 REPO_URL="$1"
 ENV_FILE="$2"
 TMP_DIR="tmp_submission_check"
