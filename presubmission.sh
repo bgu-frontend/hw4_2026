@@ -55,9 +55,14 @@ for PORT in "${PORTS[@]}"; do
   fi
 done
 
-# Start backend
+# Start backend — prefer the student's `npm run dev` if defined, otherwise fall
+# back to `node index.js` (matches the README's "The tester will" description).
 cd backend
-npm run backend > ../backend.log 2>&1 &
+if node -e "process.exit(require('./package.json').scripts?.dev ? 0 : 1)" 2>/dev/null; then
+  npm run dev > ../backend.log 2>&1 &
+else
+  node index.js > ../backend.log 2>&1 &
+fi
 BACK_PID=$!
 cd ..
 sleep 2
