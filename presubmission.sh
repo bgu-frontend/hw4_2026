@@ -5,16 +5,6 @@ if [ -z "$1" ] || [ -z "$2" ]; then
   exit 1
 fi
 
-# Precheck: attacker server must be running on port 4000 before the Playwright
-# XSS tests run, otherwise they fail with a confusing ECONNREFUSED instead of a
-# clear setup hint.
-if ! lsof -ti tcp:4000 >/dev/null 2>&1; then
-  echo "Attacker server not detected on port 4000."
-  echo "Start it from the repo root before re-running this script:"
-  echo "    node attacker_server.js"
-  exit 1
-fi
-
 REPO_URL="$1"
 ENV_FILE="$2"
 TMP_DIR="tmp_submission_check"
@@ -55,7 +45,27 @@ for PORT in "${PORTS[@]}"; do
   fi
 done
 
-# Start backend — prefer the student's `npm run dev` if defined, otherwise fall
+# If the user defined a backend/package.json script named "attacker", start it.
+# Otherwise assume the attacker server was started manually (the precheck below
+# enforces port 4000 is listening before tests run).
+if node -e "process.exit(require('./backend/package.json').scripts?.attacker ? 0 : 1)" 2>/dev/null; then
+  ( cd backend && npm run attacker ) > ../attacker.log 2>&1 &
+  ATTACKER_PID=$!
+  sleep 2
+fi
+
+# Precheck: attacker server must be listening on port 4000 before the Playwright
+# XSS tests run, otherwise they fail with a confusing ECONNREFUSED instead of a
+# clear setup hint.
+if ! lsof -ti tcp:4000 >/dev/null 2>&1; then
+  echo "Attacker server not detected on port 4000."
+  echo "Either define a 'scripts.attacker' in backend/package.json, or start it"
+  echo "manually before re-running this script (e.g., node attacker_server.js)."
+  kill $ATTACKER_PID 2>/dev/null
+  exit 1
+fi
+
+# Start backend — prefer the user's `npm run dev` if defined, otherwise fall
 # back to `node index.js` (matches the README's "The tester will" description).
 cd backend
 if node -e "process.exit(require('./package.json').scripts?.dev ? 0 : 1)" 2>/dev/null; then
@@ -78,10 +88,10 @@ sleep 2
 cd frontend
 npx playwright test || {
   echo "Test failed."
-  kill $BACK_PID $FRONT_PID
+  kill $BACK_PID $FRONT_PID $ATTACKER_PID 2>/dev/null
   exit 1
 }
 cd ..
 
-kill $BACK_PID $FRONT_PID
+kill $BACK_PID $FRONT_PID $ATTACKER_PID 2>/dev/null
 exit 0
